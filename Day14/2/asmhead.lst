@@ -1,0 +1,182 @@
+     1                                  BOTPAK  EQU    0x00280000    ; BOOTPACK     | bootpackのロード先
+     2                                  DSKCAC  EQU    0x00100000    ; DISK CACHE   | ディスクキャッシュの場所
+     3                                  DSKCAC0 EQU    0x00008000    ; DISK CACHE 0 | ディスクキャッシュの場所（リアルモード）
+     4                                  
+     5                                  ; BOOT_INFO関係
+     6                                  ; > メモしている場所は0x0ff0番地周辺ですが、メモリマップによるとこのへんも誰にも使われていないようでした
+     7                                  CYLS    EQU     0x0ff0      ; ブートセクタが設定する
+     8                                  LEDS    EQU     0x0ff1      ; LED STATE
+     9                                  VMODE   EQU     0x0ff2      ; VIDEO MODE | 色数に関する情報（何ビットカラーか）
+    10                                  SCRNX   EQU     0x0ff4      ; SCREEN X   | 解像度X
+    11                                  SCRNY   EQU     0x0ff6      ; SCREEN Y   | 解像度Y
+    12                                  VRAM    EQU     0x0ff8      ; VIDEO RAM  | グラフィックバッファの開始番地
+    13                                  
+    14                                          ;=======================================================================
+    15                                          ORG     0xc200      ; 0xc200 = 0x8000 + 0x4200
+    16                                                              ; イメージファイルの 0x4200 アドレス番目に書き込まれている
+    17                                                              ; また,先で 0x8000 以降を使うことに決めている
+    18                                  
+    19                                          ;=======================================================================
+    20                                          ; [INT(0x10); ビデオ関係](http://oswiki.osask.jp/?%28AT%29BIOS#n5884802)
+    21                                          ; ビデオモード設定
+    22                                          ;   AH = 0x00;
+    23                                          ;   AL = モード： (マイナーな画面モードは省略しています)
+    24                                          ;     0x03：16色テキスト、80x25
+    25                                          ;     0x12：VGAグラフィックス、640x480x4bitカラー、独自プレーンアクセス
+    26                                          ;     0x13：VGAグラフィックス、320x200x8bitカラー、パックドピクセル
+    27                                          ;     0x6a：拡張VGAグラフィックス、800x600x4bitカラー、独自プレーンアクセス（ビデオカードによってはサポートされない）
+    28                                          ;   戻り値：なし
+    29 00000000 BB0141                          MOV     BX, 0x4101    ; VGA graphics, 320x200x(8 bit color)
+    30 00000003 B8024F                          MOV     AX, 0x4f02
+    31 00000006 CD10                            INT     0x10
+    32                                  ; 画面モードをメモする
+    33 00000008 C606F20F08                      MOV     BYTE [VMODE], 8           ; Video MODE
+    34 0000000D C706F40F8002                    MOV     WORD [SCRNX], 640         ; SCReeN X
+    35 00000013 C706F60FE001                    MOV     WORD [SCRNY], 480         ; SCReeN Y
+    36 00000019 66C706F80F000000FD              MOV     DWORD [VRAM], 0xfd000000  ; Video RAM
+    37                                                                            ; > VRAMは0xa0000～0xaffffの64KBです。厳密に言うと、320x200=64000なので、62.5KBですが.
+    38                                                                            ;
+    39                                                                            ; > [VRAM]に 0xa0000 を入れているのですが、PC の世界で VRAM というのはビデオラムのことで
+    40                                                                            ; > 「video RAM」と書き、画面用のメモリのことです。このメモリは、もちろんデータを記憶することがい
+    41                                                                            ; > つも通りできます。しかしVRAMは普通のメモリ以上の存在で、それぞれの番地が画面上の画素に対応
+    42                                                                            ; > していて、これを利用することで画面に絵を出すことができるのです。
+    43                                  
+    44                                          ;=======================================================================
+    45                                          ; [INT(0x16); キーボード関係 - (AT)BIOS - os-wiki](http://oswiki.osask.jp/?%28AT%29BIOS#lb9f3e72)
+    46                                          ; キーロック＆シフト状態取得
+    47                                          ;   AH = 0x02;
+    48                                          ;   戻り値：
+    49                                          ;   AL == 状態コード：
+    50                                          ;     bit0：右シフト
+    51                                          ;     bit1：左シフト
+    52                                          ;     bit2：Ctrl
+    53                                          ;     bit3：Alt
+    54                                          ;     bit4：Scrollロック
+    55                                          ;     bit5：Numロック
+    56                                          ;     bit6：Capsロック
+    57                                          ;     bit7：Insertモード
+    58                                          ; BIOS (16 bit mode) から情報を取得
+    59 00000022 B402                            MOV     AH, 0x02    ; キーロック＆シフト状態取得
+    60 00000024 CD16                            INT     0x16        ; Keyboard BIOS
+    61 00000026 A2F10F                          MOV     [LEDS], AL  ; LED State
+    62                                  
+    63                                          ; PICが一切の割り込みを受け付けないようにする
+    64                                          ; AT互換機の仕様では、PICの初期化をするなら、
+    65                                          ; こいつをCLI前にやっておかないと、たまにハングアップする
+    66                                          ; PICの初期化はあとでやる
+    67                                  
+    68 00000029 B0FF                            MOV     AL, 0xff
+    69 0000002B E621                            OUT     0x21, AL
+    70 0000002D 90                              NOP                   ; OUT命令を連続させるとうまくいかない機種があるらしいので
+    71 0000002E E6A1                            OUT     0xa1, AL
+    72                                  
+    73 00000030 FA                              CLI                   ; さらにCPUレベルでも割り込み禁止
+    74                                  
+    75                                          ; CPUから1MB以上のメモリにアクセスできるように、A20GATEを設定
+    76                                  
+    77 00000031 E8B500                          CALL waitkbdout
+    78 00000034 B0D1                            MOV  AL,0xd1
+    79 00000036 E664                            OUT  0x64,AL
+    80 00000038 E8AE00                          CALL waitkbdout
+    81 0000003B B0DF                            MOV  AL,0xdf          ; enable A20
+    82 0000003D E660                            OUT  0x60,AL
+    83 0000003F E8A700                          CALL waitkbdout
+    84                                  
+    85                                          ; プロテクトモード移行
+    86                                          
+    87                                          ;[INSTRSET "i486p"]    ; i486の命令まで使いたいという記述
+    88                                          ; ここで指定するのではなくgccでcompileする際にi486で指定
+    89                                  
+    90 00000042 0F0116[2A01]                    LGDT [GDTR0]   ; 暫定GDTを設定
+    91 00000047 0F20C0                          MOV  EAX,CR0
+    92 0000004A 6625FFFFFF7F                    AND  EAX,0x7fffffff ; bit31を0にする（ページング禁止のため）
+    93 00000050 6683C801                        OR  EAX,0x00000001 ; bit0を1にする（プロテクトモード移行のため）
+    94 00000054 0F22C0                          MOV  CR0,EAX
+    95 00000057 EB00                            JMP  pipelineflush
+    96                                  pipelineflush:
+    97 00000059 B80800                          MOV  AX,1*8   ;  読み書き可能セグメント32bit
+    98 0000005C 8ED8                            MOV  DS,AX
+    99 0000005E 8EC0                            MOV  ES,AX
+   100 00000060 8EE0                            MOV  FS,AX
+   101 00000062 8EE8                            MOV  GS,AX
+   102 00000064 8ED0                            MOV  SS,AX
+   103                                  
+   104                                          ; bootpackの転送
+   105                                  
+   106 00000066 66BE[30010000]                  MOV  ESI,bootpack ; 転送元
+   107 0000006C 66BF00002800                    MOV  EDI,BOTPAK  ; 転送先
+   108 00000072 66B900000200                    MOV  ECX,512*1024/4
+   109                                          ;MOV  ECX, 131072
+   110 00000078 E87500                          CALL memcpy
+   111                                  
+   112                                          ; ついでにディスクデータも本来の位置へ転送
+   113                                  
+   114                                          ; まずはブートセクタから
+   115                                  
+   116 0000007B 66BE007C0000                    MOV  ESI,0x7c00  ; 転送元
+   117 00000081 66BF00001000                    MOV  EDI,DSKCAC  ; 転送先
+   118 00000087 66B980000000                    MOV  ECX,512/4
+   119                                          ;MOV  ECX, 128
+   120 0000008D E86000                          CALL memcpy
+   121                                  
+   122                                          ; 残り全部
+   123                                  
+   124 00000090 66BE00820000                    MOV  ESI,DSKCAC0+512 ; 転送元
+   125 00000096 66BF00021000                    MOV  EDI,DSKCAC+512 ; 転送先
+   126 0000009C 66B900000000                    MOV  ECX,0
+   127 000000A2 8A0EF00F                        MOV  CL,BYTE [CYLS]
+   128 000000A6 6669C900120000                  IMUL ECX,512*18*2/4 ; シリンダ数からバイト数/4に変換
+   129                                          ;IMUL ECX, 4608
+   130 000000AD 6681E980000000                  SUB  ECX,512/4  ; IPLの分だけ差し引く
+   131                                          ;SUB  ECX, 128  ; IPLの分だけ差し引く
+   132 000000B4 E83900                          CALL memcpy
+   133                                  
+   134                                          ; asmheadでしなければいけないことは全部し終わったので、
+   135                                          ; あとはbootpackに任せる
+   136                                          
+   137                                          ; bootpackの起動
+   138                                  
+   139 000000B7 66BB00002800                    MOV  EBX,BOTPAK
+   140 000000BD 66678B4B10                      MOV  ECX,[EBX+16]
+   141 000000C2 6683C103                        ADD  ECX,3   ; ECX += 3;
+   142 000000C6 66C1E902                        SHR  ECX,2   ; ECX /= 4;
+   143 000000CA 7410                            JZ  skip   ; 転送するべきものがない
+   144 000000CC 66678B7314                      MOV  ESI,[EBX+20] ; 転送元
+   145 000000D1 6601DE                          ADD  ESI,EBX
+   146 000000D4 66678B7B0C                      MOV  EDI,[EBX+12] ; 転送先
+   147 000000D9 E81400                          CALL memcpy
+   148                                  skip:
+   149 000000DC 66678B630C                      MOV  ESP,[EBX+12] ; スタック初期値
+   150 000000E1 66EA1B0000001000                JMP  DWORD 2*8:0x0000001b
+   151                                  
+   152                                  waitkbdout:
+   153 000000E9 E464                            IN   AL,0x64
+   154 000000EB 2402                            AND   AL,0x02
+   155 000000ED 75FA                            JNZ  waitkbdout  ; ANDの結果が0でなければwaitkbdoutへ
+   156 000000EF C3                              RET
+   157                                  
+   158                                  memcpy:
+   159 000000F0 66678B06                        MOV  EAX,[ESI]
+   160 000000F4 6683C604                        ADD  ESI,4
+   161 000000F8 66678907                        MOV  [EDI],EAX
+   162 000000FC 6683C704                        ADD  EDI,4
+   163 00000100 6683E901                        SUB  ECX,1
+   164 00000104 75EA                            JNZ  memcpy   ; 引き算した結果が0でなければmemcpyへ
+   165 00000106 C3                              RET
+   166                                          ; memcpyはアドレスサイズプリフィクスを入れ忘れなければ、ストリング命令でも書ける
+   167                                  
+   168 00000107 <res 00000009>                  ALIGNB 16
+   168          ******************       warning: uninitialized space declared in .text section: zeroing
+   169                                  GDT0:
+   170 00000110 <res 00000008>                  RESB 8    ; ヌルセレクタ
+   170          ******************       warning: uninitialized space declared in .text section: zeroing
+   171 00000118 FFFF00000092CF00                DW  0xffff,0x0000,0x9200,0x00cf ; 読み書き可能セグメント32bit
+   172 00000120 FFFF0000289A4700                DW  0xffff,0x0000,0x9a28,0x0047 ; 実行可能セグメント32bit（bootpack用）
+   173                                  
+   174 00000128 0000                            DW  0
+   175                                  GDTR0:
+   176 0000012A 1700                            DW  8*3-1
+   177 0000012C [10010000]                      DD  GDT0
+   178                                  
+   179                                          ALIGNB 16
+   180                                  bootpack:

@@ -1,0 +1,184 @@
+     1                                   ; nasmhead.asm
+     2                                  
+     3                                    VBEMODE EQU 0x105 ; 1024 x 768 x 8bit
+     4                                    ; 0x100 :  640 x  400 x 8bit
+     5                                    ; 0x101 :  640 x  480 x 8bit
+     6                                    ; 0x103 :  800 x  600 x 8bit
+     7                                    ; 0x105 : 1024 x  768 x 8bit
+     8                                    ; 0x107 : 1280 x 1024 x 8bit
+     9                                  
+    10                                    BOTPAK EQU 0x00280000 ; Load destination of bootpack
+    11                                    DSKCAC EQU 0x00100000 ; Disk cache destination
+    12                                    DSKCAC0 EQU 0x00008000 ; Disk cache destination (Real mode)
+    13                                  
+    14                                    ; Boot information
+    15                                    CYLS EQU 0x0ff0
+    16                                    LEDS EQU 0x0ff1
+    17                                    VMODE EQU 0x0ff2 ; Color information
+    18                                    SCRNX EQU 0x0ff4 ; Screen X
+    19                                    SCRNY EQU 0x0ff6 ; Screen Y
+    20                                    VRAM EQU 0x0ff8 ; Start number of graphic buffer
+    21                                  
+    22                                    ORG 0xc200 ; Where to read this code
+    23                                  
+    24                                  
+    25 00000000 B80090                    MOV           AX, 0x9000
+    26 00000003 8EC0                      MOV           ES, AX
+    27 00000005 BF0000                    MOV           DI, 0
+    28 00000008 B8004F                    MOV           AX, 0x4f00
+    29 0000000B CD10                      INT           0x10
+    30 0000000D 83F84F                    CMP           AX, 0x004f
+    31 00000010 7552                      JNE           scrn320
+    32                                  
+    33 00000012 268B4504                  MOV           AX, [ES:DI+4]
+    34 00000016 3D0002                    CMP           AX, 0x0200
+    35 00000019 7249                      JB            scrn320                 ; if (AX < 0x0200) goto scrn320
+    36                                  
+    37 0000001B B90501                    MOV           CX, VBEMODE
+    38 0000001E B8014F                    MOV           AX, 0x4f01
+    39 00000021 CD10                      INT           0x10
+    40 00000023 83F84F                    CMP           AX, 0x004f
+    41 00000026 753C                      JNE           scrn320
+    42                                  
+    43 00000028 26807D1908                CMP           BYTE [ES:DI+0x19], 8
+    44 0000002D 7535                      JNE           scrn320
+    45 0000002F 26807D1B04                CMP           BYTE [ES:DI+0x1b], 4
+    46 00000034 752E                      JNE           scrn320
+    47 00000036 268B05                    MOV           AX, [ES:DI+0x00]
+    48 00000039 258000                    AND           AX, 0x0080
+    49 0000003C 7426                      JZ            scrn320
+    50                                  
+    51 0000003E BB0541                    MOV           BX, VBEMODE+0x4000
+    52 00000041 B8024F                    MOV           AX, 0x4f02
+    53 00000044 CD10                      INT           0x10
+    54 00000046 C606F20F08                MOV           BYTE [VMODE], 8
+    55 0000004B 268B4512                  MOV           AX, [ES:DI+0x12]
+    56 0000004F A3F40F                    MOV           [SCRNX], AX
+    57 00000052 268B4514                  MOV           AX, [ES:DI+0x14]
+    58 00000056 A3F60F                    MOV           [SCRNY], AX
+    59 00000059 26668B4528                MOV           EAX, [ES:DI+0x28]
+    60 0000005E 66A3F80F                  MOV           [VRAM], EAX
+    61 00000062 EB20                      JMP           keystatus
+    62                                  
+    63                                  scrn320:
+    64 00000064 B013                      MOV           AL, 0x13
+    65 00000066 B400                      MOV           AH, 0x00
+    66 00000068 CD10                      INT           0x10
+    67 0000006A C606F20F08                MOV           BYTE [VMODE], 8
+    68 0000006F C706F40F4001              MOV           WORD [SCRNX], 320
+    69 00000075 C706F60FC800              MOV           WORD [SCRNY], 200
+    70 0000007B 66C706F80F00000A00        MOV DWORD [VRAM], 0x000a0000
+    71                                  
+    72                                  keystatus:
+    73 00000084 B402                      MOV AH, 0x02
+    74 00000086 CD16                      INT 0x16 ; keyboard BIOS
+    75 00000088 A2F10F                    MOV [LEDS], AL
+    76                                  
+    77                                    ; PICが一切の割り込みを受け付けないようにする
+    78                                    ; AT互換機の仕様では、PICの初期化をする場合、割り込み禁止をCLI前に行わないと、
+    79                                    ; たまにハングアップする
+    80                                    ; PICの初期化はあとで
+    81 0000008B B0FF                      MOV AL, 0x0ff
+    82 0000008D E621                      OUT 0x21, AL
+    83 0000008F 90                        NOP
+    84 00000090 E6A1                      OUT 0xa1, AL
+    85                                  
+    86 00000092 FA                        CLI ; Clear interrupt flag
+    87                                  
+    88                                    ; Settings to access memories over 1MB from CPU
+    89 00000093 E8B500                    CALL waitkbdout
+    90 00000096 B0D1                      MOV AL, 0xd1
+    91 00000098 E664                      OUT 0x64, AL
+    92 0000009A E8AE00                    CALL waitkbdout
+    93 0000009D B0DF                      MOV AL, 0xdf ; Enable A20
+    94 0000009F E660                      OUT 0x60, AL
+    95 000000A1 E8A700                    CALL waitkbdout
+    96                                  
+    97                                    ; Move protect mode to use i486 instruction set
+    98 000000A4 0F0116[8A01]              LGDT [GDTR0]
+    99 000000A9 0F20C0                    MOV EAX, CR0
+   100 000000AC 6625FFFFFF7F              AND EAX, 0x7fffffff ; Set bit31 to 0 not to allow paging
+   101 000000B2 6683C801                  OR EAX, 0x00000001 ; Set bit0 to 1 to move protect mode
+   102 000000B6 0F22C0                    MOV CR0, EAX
+   103 000000B9 EB00                      JMP pipelineflush
+   104                                  
+   105                                  pipelineflush:
+   106 000000BB B80800                    MOV AX, 1*8 ; read-write 32bit segments
+   107 000000BE 8ED8                      MOV DS, AX
+   108 000000C0 8EC0                      MOV ES, AX
+   109 000000C2 8EE0                      MOV FS, AX
+   110 000000C4 8EE8                      MOV GS, AX
+   111 000000C6 8ED0                      MOV SS, AX
+   112                                  
+   113                                    ; Send bootpack
+   114 000000C8 66BE[90010000]            MOV ESI, bootpack ; Source
+   115 000000CE 66BF00002800              MOV EDI, BOTPAK ; Destination
+   116 000000D4 66B900000200              MOV ECX, 512*1024/4
+   117 000000DA E87500                    CALL memcpy
+   118                                  
+   119                                    ; Send disk data
+   120                                    ; Send boot sector
+   121 000000DD 66BE007C0000              MOV ESI, 0x7c00 ; Source
+   122 000000E3 66BF00001000              MOV EDI, DSKCAC ; Destination
+   123 000000E9 66B980000000              MOV ECX, 512/4
+   124 000000EF E86000                    CALL memcpy
+   125                                  
+   126                                    ; All of remainings
+   127 000000F2 66BE00820000              MOV ESI, DSKCAC0+512 ; Source
+   128 000000F8 66BF00021000              MOV EDI, DSKCAC+512 ; Destination
+   129 000000FE 66B900000000              MOV ECX, 0
+   130 00000104 8A0EF00F                  MOV CL, BYTE [CYLS]
+   131 00000108 6669C900120000            IMUL ECX, 512*18*2/4 ; To convert from number of cylinders to bite/4
+   132 0000010F 6681E980000000            SUB ECX, 512/4 ; Minus IPL
+   133 00000116 E83900                    CALL memcpy
+   134                                    ; Fin asmhead
+   135                                  
+   136                                    ; Start bootpack
+   137 00000119 66BB00002800              MOV EBX, BOTPAK
+   138 0000011F 66678B4B10                MOV ECX, [EBX+16]
+   139 00000124 6683C103                  ADD ECX, 3 ; ECX += 3
+   140 00000128 66C1E902                  SHR ECX, 2 ; ECX /= 4
+   141 0000012C 7410                      JZ skip ; No things to send
+   142 0000012E 66678B7314                MOV ESI, [EBX+20] ; Source
+   143 00000133 6601DE                    ADD ESI, EBX
+   144 00000136 66678B7B0C                MOV EDI, [EBX+12] ; Destination
+   145 0000013B E81400                    CALL memcpy
+   146                                  
+   147                                  skip:
+   148 0000013E 66678B630C                MOV ESP, [EBX+12] ; Initial value of stack
+   149 00000143 66EA1B0000001000          JMP DWORD 2*8:0x0000001b
+   150                                  
+   151                                  waitkbdout:
+   152 0000014B E464                      IN AL, 0x64
+   153 0000014D 2402                      AND AL, 0x02
+   154 0000014F 75FA                      JNZ waitkbdout
+   155 00000151 C3                        RET
+   156                                  
+   157                                  memcpy:
+   158 00000152 66678B06                  MOV EAX, [ESI]
+   159 00000156 6683C604                  ADD ESI, 4
+   160 0000015A 66678907                  MOV [EDI], EAX
+   161 0000015E 6683C704                  ADD EDI, 4
+   162 00000162 6683E901                  SUB ECX, 1
+   163 00000166 75EA                      JNZ memcpy ; Move memcpy if a result is not 0
+   164 00000168 C3                        RET
+   165                                  
+   166 00000169 <res 00000007>            ALIGNB 16
+   166          ******************       warning: uninitialized space declared in .text section: zeroing
+   167                                  
+   168                                  GDT0:
+   169 00000170 <res 00000008>            RESB 8
+   169          ******************       warning: uninitialized space declared in .text section: zeroing
+   170 00000178 FFFF00000092CF00          DW 0xffff, 0x0000, 0x9200, 0x00cf ; Read-write segment 32bits
+   171 00000180 FFFF0000289A4700          DW 0xffff, 0x0000, 0x9a28, 0x0047 ; Execuable segment 32bits for bootpack
+   172                                  
+   173 00000188 0000                      DW 0
+   174                                  
+   175                                  GDTR0:
+   176 0000018A 1700                      DW 8*3-1
+   177 0000018C [70010000]                DD GDT0
+   178                                  
+   179                                    ALIGNB 16
+   180                                  
+   181                                  bootpack:
+   182                                  

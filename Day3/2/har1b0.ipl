@@ -1,0 +1,7 @@
+     1                                  ;har1b0
+     2                                  ;TAB=4
+     3                                  ;OSの中身
+     4                                  fin:
+     5                                  
+     6 00000000 F4                      	HLT
+     7 00000001 EBFD                    	JMP	fin

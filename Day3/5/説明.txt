@@ -1,0 +1,13 @@
+3日目のharib00i
+
+今まではhar1-b0.asmの中にOSのやりたいことを直接書いていた（fin以下の内容）
+
+これからは32bitmodeでC言語を用いてOS本体を書きましょう
+
+16bitmodeで必要（BIOS）な情報はasmhead.asm に書きましょう
+
+OS本体内容はbootpack.cに書きましょう
+
+OS本体のファイル（sys）を作るためには16bitmodeで書かれている(BIOSの情報)と実際動かしたい内容（C言語の内容）を組み合わせてできる
+
+これには32bitmodeの情報

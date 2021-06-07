@@ -1,0 +1,30 @@
+     1                                  ;har1b0
+     2                                  ;TAB=4
+     3                                  
+     4                                  ;BOOTの情報(16bitmodeでBIOS設定の最後)
+     5                                  CYLS	EQU	0x0ff0		;ブートセクタが設定する（使われてなかったから使っただけ）
+     6                                  LEDS	EQU	0x0ff1
+     7                                  VMODE	EQU	0x0ff2		;色数に関する情報何ビットカラーか
+     8                                  SCRNX	EQU	0x0ff4		;画面のx座標の解像度
+     9                                  SCRNY	EQU	0x0ff6		;画面のy座標の解像度
+    10                                  VRAM	EQU	0x0ff8		;グラフィックバッファの開始番地
+    11                                  
+    12                                  	ORG	0xc200		;このプログラムが読み込まれる場所(0x800 から始まり、ファイルの中身は0x4200を足した場所なのでそれらを足した数字)
+    13                                  	
+    14 00000000 B013                    	MOV	AL,0x13		;VGAグラフィックス、320x200x8bitカラー
+    15 00000002 B400                    	MOV	AH,0x00
+    16 00000004 CD10                    	INT	0x10
+    17 00000006 C606F20F08              	MOV	BYTE [VMODE],8	;画面モードをメモする
+    18 0000000B C706F40F4001            	MOV 	WORD [SCRNX],320
+    19 00000011 C706F40FC800            	MOV	WORD [SCRNX],200
+    20 00000017 66C706F80F00A00000      	MOV	DWORD [VRAM],0x000a000
+    21                                  
+    22                                  ;キーボードのLED状態をBIOSから教えてもらう
+    23                                  
+    24 00000020 B402                    	MOV	AH,0x02
+    25 00000022 CD16                    	INT	0x16		;キーボードのBIOS情報
+    26 00000024 A2F10F                  	MOV	[LEDS],AL	
+    27                                  fin:
+    28                                  
+    29 00000027 F4                      	HLT
+    30 00000028 EBFD                    	JMP	fin
